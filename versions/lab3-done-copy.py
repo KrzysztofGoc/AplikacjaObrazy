@@ -5,6 +5,7 @@ from PIL import Image, ImageTk, ImageOps
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.ticker import FuncFormatter
+import cv2
 
 
 class AplikacjaObrazy:
@@ -79,6 +80,14 @@ class AplikacjaObrazy:
         logic_menu.add_command(label="Konwersja binarny ↔ 8-bit", command=self.konwersja_binarny_8bit)
         self.menu_bar.add_cascade(label="Lab 3 - zad 2", menu=logic_menu)
 
+        # Zakładka Lab 4
+        lab4_menu = tk.Menu(self.menu_bar, tearoff=0)
+        lab4_menu.add_command(label="Wygładzanie liniowe", command=self.wygladzanie_liniowe)
+        lab4_menu.add_command(label="Wyostrzanie liniowe", command=self.wyostrzanie_liniowe)
+        lab4_menu.add_command(label="Detekcja krawędzi (Sobel)", command=self.detekcja_krawedzi_sobel)
+        lab4_menu.add_command(label="Detekcja krawędzi (Prewitt)", command=self.detekcja_krawedzi_prewitt)
+        self.menu_bar.add_cascade(label="Lab 4", menu=lab4_menu)
+
         # Zakładka View
         view_menu = tk.Menu(self.menu_bar, tearoff=0)
         view_menu.add_command(label="Full screen", command=self.pelny_ekran)
@@ -90,6 +99,203 @@ class AplikacjaObrazy:
         help_menu = tk.Menu(self.menu_bar, tearoff=0)
         help_menu.add_command(label="About", command=self.pokaz_informacje)
         self.menu_bar.add_cascade(label="Help", menu=help_menu)
+
+    def wybierz_metode_wypelnienia_brzegow(self):
+        """Funkcja do wyboru metody uzupełniania brzegów."""
+        metoda_wypelnienia = simpledialog.askstring("Metoda uzupełniania brzegów",
+                                                    "Wybierz metodę:\n1 - Stała wartość\n2 - Reflect 101\n3 - Reflect")
+
+        if metoda_wypelnienia == '1':
+            border_type = cv2.BORDER_CONSTANT
+            border_value = simpledialog.askinteger("Wartość stała", "Podaj wartość stałą n:", minvalue=0, maxvalue=255)
+            if border_value is None:
+                return None, None
+            return border_type, border_value
+        elif metoda_wypelnienia == '2':
+            return cv2.BORDER_REFLECT_101, None
+        elif metoda_wypelnienia == '3':
+            return cv2.BORDER_REFLECT, None
+        else:
+            messagebox.showerror("Błąd", "Nieprawidłowy wybór metody uzupełniania brzegów.")
+            return None, None
+
+    def obraz_na_cv2(self, indeks):
+        """Konwertuje obraz PIL na format zgodny z OpenCV (NumPy array)"""
+        obraz = self.obrazy[indeks].convert('RGB')  # Konwersja do RGB, jeśli nie jest
+        obraz_cv = np.array(obraz)
+        return cv2.cvtColor(obraz_cv, cv2.COLOR_RGB2BGR)
+
+    def wygeneruj_obraz_z_cv2(self, wynik_cv):
+        """Konwertuje obraz z formatu OpenCV (NumPy array) na format PIL"""
+        wynik_pil = Image.fromarray(cv2.cvtColor(wynik_cv, cv2.COLOR_BGR2RGB))
+        return wynik_pil
+
+    def wygladzanie_liniowe(self):
+        """Wybór i zastosowanie filtrów wygładzających"""
+        aktualna_zakladka = self.notebook.index("current")
+        obraz_cv = self.obraz_na_cv2(aktualna_zakladka)
+
+        # Dialog wyboru maski
+        maska_wybor = simpledialog.askstring("Maska wygładzania",
+                                             "Wybierz maskę:\n1 - Uśredniająca\n2 - Uśrednienie z wagami\n3 - Gaussowska")
+
+        if maska_wybor == '1':  # Uśredniająca
+            kernel = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=np.float32)
+            kernel /= kernel.sum()  # Normalizacja
+
+        elif maska_wybor == '2':  # Uśrednienie z wagami
+            k = simpledialog.askfloat("Waga środkowego piksela", "Podaj wartość wagi k (liczba dodatnia):", minvalue=0.1)
+            if k is None:
+                return
+            kernel = np.array([[1, 1, 1], [1, k, 1], [1, 1, 1]], dtype=np.float32)
+            kernel /= kernel.sum()  # Normalizacja
+
+        elif maska_wybor == '3':  # Gaussowska
+            kernel = np.array([[1, 2, 1], [2, 5, 2], [1, 2, 1]], dtype=np.float32)
+            kernel /= kernel.sum()  # Normalizacja
+
+        else:
+            messagebox.showerror("Błąd", "Nieprawidłowy wybór maski.")
+            return
+
+        # Wywołanie funkcji do wyboru metody uzupełniania brzegów
+        border_type, border_value = self.wybierz_metode_wypelnienia_brzegow()
+
+        # Zastosowanie filtru wyostrzającego z wybraną maską i metodą uzupełniania brzegów
+        if border_type == cv2.BORDER_CONSTANT:
+            obraz_cv = cv2.copyMakeBorder(obraz_cv, 1, 1, 1, 1, border_type, value=border_value)
+            wynik = cv2.filter2D(obraz_cv, -1, kernel)
+        else:
+            wynik = cv2.filter2D(obraz_cv, -1, kernel, borderType=border_type)
+
+        wynik_obraz = self.wygeneruj_obraz_z_cv2(wynik)
+        self.dodaj_obraz_do_notebooka(wynik_obraz, f"Wyostrzanie: Maska {maska_wybor}")
+
+    def wyostrzanie_liniowe(self):
+        """Wybór i zastosowanie filtrów wyostrzających"""
+        aktualna_zakladka = self.notebook.index("current")
+        obraz_cv = self.obraz_na_cv2(aktualna_zakladka)
+
+        maska_wybor = simpledialog.askstring("Maska wyostrzania",
+                                             "Wybierz maskę:\n1 - Laplasjan 1\n2 - Laplasjan 2\n3 - Laplasjan 3")
+
+        if maska_wybor == '1':
+            kernel = np.array([[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=np.float32)
+        elif maska_wybor == '2':
+            kernel = np.array([[-1, -1, -1], [-1, 8, -1], [-1, -1, -1]], dtype=np.float32)
+        elif maska_wybor == '3':
+            kernel = np.array([[-1, 2, -1], [2, -4, 2], [-1, 2, -1]], dtype=np.float32)
+        else:
+            messagebox.showerror("Błąd", "Nieprawidłowy wybór maski.")
+            return
+
+        # Wywołanie funkcji do wyboru metody uzupełniania brzegów
+        border_type, border_value = self.wybierz_metode_wypelnienia_brzegow()
+
+        # Zastosowanie filtru wyostrzającego z wybraną maską i metodą uzupełniania brzegów
+        if border_type == cv2.BORDER_CONSTANT:
+            obraz_cv = cv2.copyMakeBorder(obraz_cv, 1, 1, 1, 1, border_type, value=border_value)
+            wynik = cv2.filter2D(obraz_cv, -1, kernel)
+        else:
+            wynik = cv2.filter2D(obraz_cv, -1, kernel, borderType=border_type)
+
+        wynik_obraz = self.wygeneruj_obraz_z_cv2(wynik)
+        self.dodaj_obraz_do_notebooka(wynik_obraz, f"Wyostrzanie: Maska {maska_wybor}")
+
+    def detekcja_krawedzi_sobel(self):
+        """Wybór i zastosowanie 8-kierunkowych masek Sobela z możliwością wyboru metody uzupełniania brzegów"""
+        aktualna_zakladka = self.notebook.index("current")
+        obraz_cv = self.obraz_na_cv2(aktualna_zakladka)
+
+        # Zapytaj użytkownika o wybór kierunku
+        kierunek = simpledialog.askstring(
+            "Kierunek Sobela",
+            "Wybierz kierunek (1-8):\n"
+            "1 - Poziomy (0°)\n"
+            "2 - 45°\n"
+            "3 - Pionowy (90°)\n"
+            "4 - 135°\n"
+            "5 - 180°\n"
+            "6 - 225°\n"
+            "7 - 270°\n"
+            "8 - 315°"
+        )
+
+        # Wywołanie funkcji do wyboru metody uzupełniania brzegów
+        border_type, border_value = self.wybierz_metode_wypelnienia_brzegow()
+
+        # Wybór kierunku maski Sobela i zastosowanie wybranej metody uzupełniania brzegów
+        if kierunek == '1':  # 0° (poziome krawędzie)
+            sobel_x = 1
+            sobel_y = 0
+        elif kierunek == '2':  # 45°
+            sobel_x, sobel_y = 1, 1
+        elif kierunek == '3':  # 90° (pionowe krawędzie)
+            sobel_x, sobel_y = 0, 1
+        elif kierunek == '4':  # 135°
+            sobel_x, sobel_y = -1, 1
+        elif kierunek == '5':  # 180° (odwrócone poziome krawędzie)
+            sobel_x, sobel_y = -1, 0
+        elif kierunek == '6':  # 225°
+            sobel_x, sobel_y = -1, -1
+        elif kierunek == '7':  # 270° (odwrócone pionowe krawędzie)
+            sobel_x, sobel_y = 0, -1
+        elif kierunek == '8':  # 315°
+            sobel_x, sobel_y = 1, -1
+        else:
+            messagebox.showerror("Błąd", "Nieprawidłowy wybór kierunku.")
+            return
+
+        # Użycie BORDER_CONSTANT z wartością użytkownika lub wybranej metody
+        if border_type == cv2.BORDER_CONSTANT:
+            obraz_cv = cv2.copyMakeBorder(obraz_cv, 1, 1, 1, 1, border_type, value=border_value)
+            wynik = cv2.Sobel(obraz_cv, cv2.CV_64F, sobel_x, sobel_y, ksize=3)
+        else:
+            wynik = cv2.Sobel(obraz_cv, cv2.CV_64F, sobel_x, sobel_y, ksize=3, borderType=border_type)
+
+        wynik = cv2.convertScaleAbs(wynik)
+        wynik_obraz = self.wygeneruj_obraz_z_cv2(wynik)
+        self.dodaj_obraz_do_notebooka(wynik_obraz, f"Detekcja krawędzi Sobel: Kierunek {kierunek}")
+
+    def detekcja_krawedzi_prewitt(self):
+        """Detekcja krawędzi operatorami Prewitta z możliwością wyboru metody uzupełniania brzegów"""
+        aktualna_zakladka = self.notebook.index("current")
+        obraz_cv = self.obraz_na_cv2(aktualna_zakladka)
+
+        # Wywołanie funkcji do wyboru metody uzupełniania brzegów
+        border_type, border_value = self.wybierz_metode_wypelnienia_brzegow()
+
+        # Przygotowanie masek Prewitta dla osi X i Y
+        kernel_x = np.array([[1, 0, -1], [1, 0, -1], [1, 0, -1]], dtype=np.float32)
+        kernel_y = np.array([[1, 1, 1], [0, 0, 0], [-1, -1, -1]], dtype=np.float32)
+
+        # Zastosowanie filtrów Prewitta z wybraną metodą uzupełniania brzegów
+        if border_type == cv2.BORDER_CONSTANT:
+            obraz_cv = cv2.copyMakeBorder(obraz_cv, 1, 1, 1, 1, border_type, value=border_value)
+            prewittx = cv2.filter2D(obraz_cv, -1, kernel_x)
+            prewitty = cv2.filter2D(obraz_cv, -1, kernel_y)
+        else:
+            prewittx = cv2.filter2D(obraz_cv, -1, kernel_x, borderType=border_type)
+            prewitty = cv2.filter2D(obraz_cv, -1, kernel_y, borderType=border_type)
+
+        # Sumowanie wyników filtrów Prewitta dla osi X i Y oraz konwersja do wartości bezwzględnych
+        wynik = cv2.convertScaleAbs(prewittx + prewitty)
+        wynik_obraz = self.wygeneruj_obraz_z_cv2(wynik)
+        self.dodaj_obraz_do_notebooka(wynik_obraz, "Detekcja krawędzi Prewitt")
+
+    def dodaj_obraz_do_notebooka(self, obraz, tytul):
+        """Dodaj nową zakładkę z obrazem do notebooka"""
+        self.obrazy.append(obraz)
+        ramka = tk.Frame(self.notebook)
+        ramka.pack(fill=tk.BOTH, expand=True)
+        canvas = tk.Canvas(ramka, bg='white')
+        canvas.pack(fill=tk.BOTH, expand=True)
+
+        tk_obraz = ImageTk.PhotoImage(obraz)
+        canvas.create_image(0, 0, anchor=tk.NW, image=tk_obraz)
+        self.tk_obrazy.append((canvas, tk_obraz))
+        self.notebook.add(ramka, text=tytul)
+        self.notebook.select(ramka)
 
     def konwersja_binarny_8bit(self):
         """Konwersja obrazu między trybem binarnym (1) a 8-bitowym (L) z użyciem standardowego progu binarności"""
