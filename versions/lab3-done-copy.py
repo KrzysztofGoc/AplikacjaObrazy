@@ -88,6 +88,15 @@ class AplikacjaObrazy:
         lab4_menu.add_command(label="Detekcja krawędzi (Prewitt)", command=self.detekcja_krawedzi_prewitt)
         self.menu_bar.add_cascade(label="Lab 4", menu=lab4_menu)
 
+        # Zakładka Lab 5
+        lab5_menu = tk.Menu(self.menu_bar, tearoff=0)
+        lab5_menu.add_command(label="Progowanie z dwoma progami", command=self.segmentacja_progowanie)
+        lab5_menu.add_command(label="Progowanie metodą Otsu", command=self.progowanie_otsu)
+        lab5_menu.add_command(label="Progowanie adaptacyjne", command=self.progowanie_adaptacyjne)
+        lab5_menu.add_command(label="Operacje morfologiczne", command=self.operacje_morfologiczne)
+        lab5_menu.add_command(label="Szkieletyzacja", command=self.szkieletyzacja)
+        self.menu_bar.add_cascade(label="Lab 5", menu=lab5_menu)
+
         # Zakładka View
         view_menu = tk.Menu(self.menu_bar, tearoff=0)
         view_menu.add_command(label="Full screen", command=self.pelny_ekran)
@@ -99,6 +108,218 @@ class AplikacjaObrazy:
         help_menu = tk.Menu(self.menu_bar, tearoff=0)
         help_menu.add_command(label="About", command=self.pokaz_informacje)
         self.menu_bar.add_cascade(label="Help", menu=help_menu)
+
+    def szkieletyzacja(self):
+        """Wykonywanie szkieletyzacji obiektu na mapie binarnej"""
+        aktualna_zakladka = self.notebook.index("current")
+        obraz_cv = self.obraz_na_cv2(aktualna_zakladka)
+
+        # Konwersja na obraz w skali szarości, jeśli obraz nie jest już jednokanałowy
+        if len(obraz_cv.shape) == 3:
+            obraz_cv = cv2.cvtColor(obraz_cv, cv2.COLOR_BGR2GRAY)
+
+        # Przekształcenie obrazu do postaci binarnej
+        _, obraz_binarny = cv2.threshold(obraz_cv, 127, 255, cv2.THRESH_BINARY)
+
+        # Wykonanie szkieletyzacji
+        szkielet = cv2.ximgproc.thinning(obraz_binarny, thinningType=cv2.ximgproc.THINNING_ZHANGSUEN)
+
+        # Konwersja wyniku na obraz Pillow i dodanie do zakładki
+        wynik_obraz = self.wygeneruj_obraz_z_cv2(szkielet)
+        self.dodaj_obraz_do_notebooka(wynik_obraz, "Szkieletyzacja")
+
+    def operacje_morfologiczne(self):
+        """Wybór i zastosowanie operacji morfologicznych"""
+        aktualna_zakladka = self.notebook.index("current")
+        obraz_cv = self.obraz_na_cv2(aktualna_zakladka)
+
+        # Zapytaj użytkownika o wybór operacji
+        operacja = simpledialog.askstring(
+            "Operacje morfologiczne",
+            "Wybierz operację:\n"
+            "1 - Erozja\n"
+            "2 - Dylacja\n"
+            "3 - Otwarcie\n"
+            "4 - Zamknięcie"
+        )
+
+        if operacja not in ['1', '2', '3', '4']:
+            messagebox.showerror("Błąd", "Nieprawidłowy wybór operacji.")
+            return
+
+        # Zapytaj użytkownika o wybór elementu strukturalnego
+        element = simpledialog.askstring(
+            "Element strukturalny",
+            "Wybierz element strukturalny:\n"
+            "1 - Krzyż\n"
+            "2 - Prostokąt"
+        )
+
+        if element == '1':  # Krzyż
+            kernel = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
+        elif element == '2':  # Prostokąt
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        else:
+            messagebox.showerror("Błąd", "Nieprawidłowy wybór elementu strukturalnego.")
+            return
+
+        # Wybór operacji morfologicznej
+        if operacja == '1':  # Erozja
+            wynik = cv2.erode(obraz_cv, kernel)
+        elif operacja == '2':  # Dylacja
+            wynik = cv2.dilate(obraz_cv, kernel)
+        elif operacja == '3':  # Otwarcie
+            wynik = cv2.morphologyEx(obraz_cv, cv2.MORPH_OPEN, kernel)
+        elif operacja == '4':  # Zamknięcie
+            wynik = cv2.morphologyEx(obraz_cv, cv2.MORPH_CLOSE, kernel)
+
+        # Konwersja wyniku na obraz Pillow i dodanie do zakładki
+        wynik_obraz = self.wygeneruj_obraz_z_cv2(wynik)
+        nazwa_operacji = ["Erozja", "Dylacja", "Otwarcie", "Zamknięcie"][int(operacja) - 1]
+        self.dodaj_obraz_do_notebooka(
+            wynik_obraz, f"{nazwa_operacji}: Element {'Krzyż' if element == '1' else 'Prostokąt'}"
+        )
+
+    def progowanie_adaptacyjne(self):
+        """Progowanie adaptacyjne (adaptive threshold) z obsługą obrazów kolorowych"""
+        aktualna_zakladka = self.notebook.index("current")
+        obraz_cv = self.obraz_na_cv2(aktualna_zakladka)
+
+        # Zapytaj użytkownika o parametry progowania
+        block_size = simpledialog.askinteger(
+            "Rozmiar bloku",
+            "Podaj rozmiar bloku (musi być nieparzysty, np. 3, 5, 7):",
+            minvalue=3
+        )
+        if block_size is None or block_size % 2 == 0:
+            messagebox.showerror("Błąd", "Rozmiar bloku musi być nieparzysty i większy od 1.")
+            return
+
+        c_value = simpledialog.askinteger(
+            "Stała C",
+            "Podaj wartość stałej C (do odejmowania od średniej):",
+            minvalue=0
+        )
+        if c_value is None:
+            return
+
+        # Wybór metody progowania adaptacyjnego
+        metoda = simpledialog.askstring(
+            "Metoda progowania",
+            "Wybierz metodę:\n1 - Mean (uśrednianie)\n2 - Gaussian (filtr Gaussowski)"
+        )
+
+        if metoda not in ['1', '2']:
+            messagebox.showerror("Błąd", "Nieprawidłowy wybór metody.")
+            return
+
+        # Funkcja pomocnicza do progowania adaptacyjnego
+        def apply_adaptive_threshold(channel, method, block_size, c_value):
+            if method == '1':
+                return cv2.adaptiveThreshold(
+                    channel, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, block_size, c_value
+                )
+            elif method == '2':
+                return cv2.adaptiveThreshold(
+                    channel, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, block_size, c_value
+                )
+
+        if len(obraz_cv.shape) == 2:  # Obraz w skali szarości
+            wynik = apply_adaptive_threshold(obraz_cv, metoda, block_size, c_value)
+        elif len(obraz_cv.shape) == 3:  # Obraz kolorowy
+            channels = cv2.split(obraz_cv)  # Rozdziel kanały R, G, B
+            progowane_kanaly = [
+                apply_adaptive_threshold(channel, metoda, block_size, c_value) for channel in channels
+            ]
+            wynik = cv2.merge(progowane_kanaly)  # Połącz kanały w jeden obraz
+        else:
+            messagebox.showerror("Błąd", "Nieobsługiwany format obrazu.")
+            return
+
+        # Konwersja wyniku na obraz Pillow i dodanie do zakładki
+        wynik_obraz = self.wygeneruj_obraz_z_cv2(wynik)
+        self.dodaj_obraz_do_notebooka(wynik_obraz, f"Progowanie adaptacyjne: Block {block_size}, C {c_value}")
+
+    def progowanie_otsu(self):
+        """Segmentacja obrazu za pomocą progowania metodą Otsu"""
+        if not self.obrazy or self.notebook.index("current") == -1:
+            messagebox.showwarning("Brak obrazu", "Najpierw wczytaj obraz.")
+            return
+
+        aktualna_zakladka = self.notebook.index("current")
+        obraz_cv = self.obraz_na_cv2(aktualna_zakladka)
+
+        # Sprawdzenie trybu obrazu
+        if len(obraz_cv.shape) == 2:  # Skala szarości
+            # Progowanie metodą Otsu
+            _, segmentacja = cv2.threshold(obraz_cv, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+            # Wyznaczenie optymalnego progu
+            prog_otsu = cv2.threshold(obraz_cv, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[0]
+            print(f"Wyznaczony próg Otsu: {prog_otsu}")
+
+        elif len(obraz_cv.shape) == 3:  # Obraz kolorowy (RGB)
+            segmentacja = np.zeros_like(obraz_cv, dtype=np.uint8)
+            for i in range(3):  # Iteracja przez kanały R, G, B
+                _, segmentacja[:, :, i] = cv2.threshold(
+                    obraz_cv[:, :, i], 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+                )
+
+            # Wyznaczenie progów Otsu dla każdego kanału (opcjonalnie można je wyświetlić)
+            progi_otsu = [
+                cv2.threshold(obraz_cv[:, :, i], 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[0]
+                for i in range(3)
+            ]
+            print(f"Wyznaczone progi Otsu dla kanałów RGB: {progi_otsu}")
+
+        else:
+            messagebox.showerror("Nieobsługiwany tryb obrazu",
+                                 "Obraz musi być w skali szarości lub w trybie kolorowym.")
+            return
+
+        # Konwersja i dodanie do zakładki
+        wynik_obraz = self.wygeneruj_obraz_z_cv2(segmentacja)
+        self.dodaj_obraz_do_notebooka(wynik_obraz, "Progowanie Otsu")
+
+    def segmentacja_progowanie(self):
+        """Segmentacja obrazu za pomocą progowania z dwoma progami dla trybów szarości i kolorowych"""
+        if not self.obrazy or self.notebook.index("current") == -1:
+            messagebox.showwarning("Brak obrazu", "Najpierw wczytaj obraz.")
+            return
+
+        aktualna_zakladka = self.notebook.index("current")
+        obraz_cv = self.obraz_na_cv2(aktualna_zakladka)
+
+        # Pytanie o progi
+        prog1 = simpledialog.askinteger("Progowanie z dwoma progami", "Podaj pierwszy próg (0-255):", minvalue=0,
+                                        maxvalue=255)
+        prog2 = simpledialog.askinteger("Progowanie z dwoma progami", "Podaj drugi próg (0-255):", minvalue=0,
+                                        maxvalue=255)
+
+        if prog1 is None or prog2 is None:
+            return
+
+        # Upewnij się, że prog1 < prog2
+        if prog1 >= prog2:
+            messagebox.showerror("Błąd", "Pierwszy próg musi być mniejszy niż drugi próg.")
+            return
+
+        # Segmentacja
+        if len(obraz_cv.shape) == 2:  # Skala szarości
+            segmentacja = np.zeros_like(obraz_cv, dtype=np.uint8)
+            segmentacja[np.logical_and(obraz_cv >= prog1, obraz_cv <= prog2)] = 255
+
+        elif len(obraz_cv.shape) == 3:  # Obraz kolorowy (RGB)
+            segmentacja = np.zeros_like(obraz_cv, dtype=np.uint8)
+            for i in range(3):  # Iteracja przez kanały R, G, B
+                segmentacja[:, :, i][np.logical_and(obraz_cv[:, :, i] >= prog1, obraz_cv[:, :, i] <= prog2)] = 255
+        else:
+            messagebox.showerror("Nieobsługiwany tryb obrazu",
+                                 "Obraz musi być w skali szarości lub w trybie kolorowym.")
+            return
+
+        wynik_obraz = self.wygeneruj_obraz_z_cv2(segmentacja)
+        self.dodaj_obraz_do_notebooka(wynik_obraz, f"Segmentacja: Progi {prog1}-{prog2}")
 
     def wybierz_metode_wypelnienia_brzegow(self):
         """Funkcja do wyboru metody uzupełniania brzegów."""
