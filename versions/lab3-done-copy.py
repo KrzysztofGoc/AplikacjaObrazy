@@ -495,57 +495,65 @@ class AplikacjaObrazy:
         self.dodaj_obraz_do_notebooka(wynik_obraz, f"Wyostrzanie: Maska {maska_wybor}")
 
     def detekcja_krawedzi_sobel(self):
-        """Wybór i zastosowanie 8-kierunkowych masek Sobela z możliwością wyboru metody uzupełniania brzegów"""
-        aktualna_zakladka = self.notebook.index("current")
+        """Detekcja krawędzi za pomocą 8-kierunkowych masek Sobela z wyborem metody uzupełniania brzegów."""
+        aktualna_zakladka = self.notebook.index(self.notebook.select())
         obraz_cv = self.obraz_na_cv2(aktualna_zakladka)
 
-        # Zapytaj użytkownika o wybór kierunku
-        kierunek = simpledialog.askstring(
+        if obraz_cv is None:
+            messagebox.showwarning("Brak obrazu", "Najpierw wczytaj obraz.")
+            return
+
+        # Wybór kierunku detekcji
+        kierunek = simpledialog.askinteger(
             "Kierunek Sobela",
-            "Wybierz kierunek (1-8):\n"
-            "1 - Poziomy (0°)\n"
-            "2 - 45°\n"
-            "3 - Pionowy (90°)\n"
-            "4 - 135°\n"
-            "5 - 180°\n"
-            "6 - 225°\n"
-            "7 - 270°\n"
-            "8 - 315°"
+            "Wybierz kierunek (0-7):\n"
+            "0 - Poziomy (0°)\n"
+            "1 - 45°\n"
+            "2 - Pionowy (90°)\n"
+            "3 - 135°\n"
+            "4 - Odwrócony pionowy (180°)\n"
+            "5 - 225°\n"
+            "6 - Odwrócony poziomy (270°)\n"
+            "7 - 315°"
         )
 
-        # Wywołanie funkcji do wyboru metody uzupełniania brzegów
-        border_type, border_value = self.wybierz_metode_wypelnienia_brzegow()
-
-        # Filtry Sobela dla kierunków podstawowych (poziomy i pionowy)
-        if border_type == cv2.BORDER_CONSTANT:
-            obraz_cv = cv2.copyMakeBorder(obraz_cv, 1, 1, 1, 1, border_type, value=border_value)
-
-        sobel_x = cv2.Sobel(obraz_cv, cv2.CV_64F, 1, 0, ksize=3, borderType=border_type)
-        sobel_y = cv2.Sobel(obraz_cv, cv2.CV_64F, 0, 1, ksize=3, borderType=border_type)
-
-        # Wybór kierunku
-        if kierunek == '1':  # 0° (poziome krawędzie)
-            wynik = sobel_x
-        elif kierunek == '2':  # 45°
-            wynik = 0.707 * sobel_x + 0.707 * sobel_y
-        elif kierunek == '3':  # 90° (pionowe krawędzie)
-            wynik = sobel_y
-        elif kierunek == '4':  # 135°
-            wynik = -0.707 * sobel_x + 0.707 * sobel_y
-        elif kierunek == '5':  # 180° (odwrócone poziome krawędzie)
-            wynik = -sobel_x
-        elif kierunek == '6':  # 225°
-            wynik = -0.707 * sobel_x - 0.707 * sobel_y
-        elif kierunek == '7':  # 270° (odwrócone pionowe krawędzie)
-            wynik = -sobel_y
-        elif kierunek == '8':  # 315°
-            wynik = 0.707 * sobel_x - 0.707 * sobel_y
-        else:
+        if kierunek not in range(8):
             messagebox.showerror("Błąd", "Nieprawidłowy wybór kierunku.")
             return
 
-        # Konwersja wyniku do wartości absolutnych
-        wynik = cv2.convertScaleAbs(wynik)
+        # Wybór metody uzupełniania brzegów
+        border_type, border_value = self.wybierz_metode_wypelnienia_brzegow()
+        if border_type is None:
+            return
+
+        # Sobel maski dla 8 kierunków
+        kernels = [
+            np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]),  # Poziomy (0°)
+            np.array([[-2, -1, 0], [-1, 0, 1], [0, 1, 2]]),  # -45°
+            np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]]),  # Pionowy (90°)
+            np.array([[0, -1, -2], [1, 0, -1], [2, 1, 0]]),  # +45°
+            np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]]),  # Odwrócony pionowy (180°)
+            np.array([[2, 1, 0], [1, 0, -1], [0, -1, -2]]),  # -135°
+            np.array([[1, 0, -1], [2, 0, -2], [1, 0, -1]]),  # Odwrócony poziomy (270°)
+            np.array([[0, 1, 2], [-1, 0, 1], [-2, -1, 0]])  # +135°
+        ]
+
+        # Wybrana maska Sobela
+        kernel = kernels[kierunek]
+
+        # Dodanie brzegów do obrazu
+        if border_type == cv2.BORDER_CONSTANT:
+            obraz_cv = cv2.copyMakeBorder(obraz_cv, 1, 1, 1, 1, border_type, value=border_value)
+        else:
+            obraz_cv = cv2.copyMakeBorder(obraz_cv, 1, 1, 1, 1, border_type)
+
+        # Zastosowanie detekcji krawędzi
+        wynik = cv2.filter2D(obraz_cv, -1, kernel)
+
+        # Usunięcie dodatkowych brzegów, jeśli były dodane
+        wynik = wynik[1:-1, 1:-1]
+
+        # Konwersja wyniku na obraz
         wynik_obraz = self.wygeneruj_obraz_z_cv2(wynik)
         self.dodaj_obraz_do_notebooka(wynik_obraz, f"Detekcja krawędzi Sobel: Kierunek {kierunek}")
 
