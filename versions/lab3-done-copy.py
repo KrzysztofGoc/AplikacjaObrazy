@@ -86,6 +86,8 @@ class AplikacjaObrazy:
         lab4_menu.add_command(label="Wyostrzanie liniowe", command=self.wyostrzanie_liniowe)
         lab4_menu.add_command(label="Detekcja krawędzi (Sobel)", command=self.detekcja_krawedzi_sobel)
         lab4_menu.add_command(label="Detekcja krawędzi (Prewitt)", command=self.detekcja_krawedzi_prewitt)
+        lab4_menu.add_command(label="Operacja medianowa", command=self.operacja_medianowa)
+        lab4_menu.add_command(label="Detekcja krawędzi (Canny)", command=self.detekcja_krawedzi_canny)
         self.menu_bar.add_cascade(label="Lab 4", menu=lab4_menu)
 
         # Zakładka Lab 5
@@ -108,6 +110,75 @@ class AplikacjaObrazy:
         help_menu = tk.Menu(self.menu_bar, tearoff=0)
         help_menu.add_command(label="About", command=self.pokaz_informacje)
         self.menu_bar.add_cascade(label="Help", menu=help_menu)
+
+    def detekcja_krawedzi_canny(self):
+        """Detekcja krawędzi operatorem Canny'ego"""
+        aktualna_zakladka = self.notebook.index("current")
+        obraz_cv = self.obraz_na_cv2(aktualna_zakladka)
+
+        # Pytanie o wartości progów
+        prog1 = simpledialog.askinteger("Detekcja Canny'ego", "Podaj wartość pierwszego progu (0-255):", minvalue=0,
+                                        maxvalue=255)
+        if prog1 is None:
+            return
+        prog2 = simpledialog.askinteger("Detekcja Canny'ego", "Podaj wartość drugiego progu (0-255):", minvalue=0,
+                                        maxvalue=255)
+        if prog2 is None:
+            return
+
+        # Wywołanie funkcji do wyboru metody uzupełniania brzegów
+        border_type, border_value = self.wybierz_metode_wypelnienia_brzegow()
+
+        # Użycie BORDER_CONSTANT z wartością użytkownika lub wybranej metody
+        if border_type == cv2.BORDER_CONSTANT:
+            obraz_cv = cv2.copyMakeBorder(obraz_cv, 1, 1, 1, 1, border_type, value=border_value)
+
+        # Detekcja krawędzi za pomocą Canny'ego
+        wynik = cv2.Canny(obraz_cv, prog1, prog2, L2gradient=True)
+
+        # Konwersja wyniku na obraz
+        wynik_obraz = self.wygeneruj_obraz_z_cv2(wynik)
+        self.dodaj_obraz_do_notebooka(wynik_obraz, "Detekcja krawędzi Canny'ego")
+
+    def operacja_medianowa(self):
+        """Uniwersalna operacja medianowa z możliwością wyboru rozmiaru otoczenia i metody uzupełniania brzegów"""
+        aktualna_zakladka = self.notebook.index("current")
+        obraz_cv = self.obraz_na_cv2(aktualna_zakladka)
+
+        # Wybór rozmiaru otoczenia
+        rozmiar_otoczenia = simpledialog.askinteger(
+            "Rozmiar otoczenia",
+            "Podaj rozmiar otoczenia (3, 5, 7, 9):",
+            minvalue=3,
+            maxvalue=9,
+        )
+
+        if rozmiar_otoczenia not in [3, 5, 7, 9]:
+            messagebox.showerror("Błąd", "Nieprawidłowy rozmiar otoczenia. Wybierz 3, 5, 7 lub 9.")
+            return
+
+        # Wybór metody uzupełniania brzegów
+        border_type, border_value = self.wybierz_metode_wypelnienia_brzegow()
+
+        # Użycie metody medianowej z odpowiednią metodą uzupełniania brzegów
+        if border_type == cv2.BORDER_CONSTANT:
+            obraz_cv = cv2.copyMakeBorder(
+                obraz_cv,
+                rozmiar_otoczenia // 2,
+                rozmiar_otoczenia // 2,
+                rozmiar_otoczenia // 2,
+                rozmiar_otoczenia // 2,
+                borderType=border_type,
+                value=border_value,
+            )
+            wynik = cv2.medianBlur(obraz_cv, rozmiar_otoczenia)
+        else:
+            wynik = cv2.medianBlur(obraz_cv, rozmiar_otoczenia)
+
+        wynik_obraz = self.wygeneruj_obraz_z_cv2(wynik)
+        self.dodaj_obraz_do_notebooka(
+            wynik_obraz, f"Medianowe filtrowanie: {rozmiar_otoczenia}x{rozmiar_otoczenia}"
+        )
 
     def szkieletyzacja(self):
         """Wykonywanie szkieletyzacji obiektu na mapie binarnej"""
@@ -445,35 +516,35 @@ class AplikacjaObrazy:
         # Wywołanie funkcji do wyboru metody uzupełniania brzegów
         border_type, border_value = self.wybierz_metode_wypelnienia_brzegow()
 
-        # Wybór kierunku maski Sobela i zastosowanie wybranej metody uzupełniania brzegów
+        # Filtry Sobela dla kierunków podstawowych (poziomy i pionowy)
+        if border_type == cv2.BORDER_CONSTANT:
+            obraz_cv = cv2.copyMakeBorder(obraz_cv, 1, 1, 1, 1, border_type, value=border_value)
+
+        sobel_x = cv2.Sobel(obraz_cv, cv2.CV_64F, 1, 0, ksize=3, borderType=border_type)
+        sobel_y = cv2.Sobel(obraz_cv, cv2.CV_64F, 0, 1, ksize=3, borderType=border_type)
+
+        # Wybór kierunku
         if kierunek == '1':  # 0° (poziome krawędzie)
-            sobel_x = 1
-            sobel_y = 0
+            wynik = sobel_x
         elif kierunek == '2':  # 45°
-            sobel_x, sobel_y = 1, 1
+            wynik = 0.707 * sobel_x + 0.707 * sobel_y
         elif kierunek == '3':  # 90° (pionowe krawędzie)
-            sobel_x, sobel_y = 0, 1
+            wynik = sobel_y
         elif kierunek == '4':  # 135°
-            sobel_x, sobel_y = -1, 1
+            wynik = -0.707 * sobel_x + 0.707 * sobel_y
         elif kierunek == '5':  # 180° (odwrócone poziome krawędzie)
-            sobel_x, sobel_y = -1, 0
+            wynik = -sobel_x
         elif kierunek == '6':  # 225°
-            sobel_x, sobel_y = -1, -1
+            wynik = -0.707 * sobel_x - 0.707 * sobel_y
         elif kierunek == '7':  # 270° (odwrócone pionowe krawędzie)
-            sobel_x, sobel_y = 0, -1
+            wynik = -sobel_y
         elif kierunek == '8':  # 315°
-            sobel_x, sobel_y = 1, -1
+            wynik = 0.707 * sobel_x - 0.707 * sobel_y
         else:
             messagebox.showerror("Błąd", "Nieprawidłowy wybór kierunku.")
             return
 
-        # Użycie BORDER_CONSTANT z wartością użytkownika lub wybranej metody
-        if border_type == cv2.BORDER_CONSTANT:
-            obraz_cv = cv2.copyMakeBorder(obraz_cv, 1, 1, 1, 1, border_type, value=border_value)
-            wynik = cv2.Sobel(obraz_cv, cv2.CV_64F, sobel_x, sobel_y, ksize=3)
-        else:
-            wynik = cv2.Sobel(obraz_cv, cv2.CV_64F, sobel_x, sobel_y, ksize=3, borderType=border_type)
-
+        # Konwersja wyniku do wartości absolutnych
         wynik = cv2.convertScaleAbs(wynik)
         wynik_obraz = self.wygeneruj_obraz_z_cv2(wynik)
         self.dodaj_obraz_do_notebooka(wynik_obraz, f"Detekcja krawędzi Sobel: Kierunek {kierunek}")
