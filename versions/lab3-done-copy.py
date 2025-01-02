@@ -28,7 +28,7 @@ class AplikacjaObrazy:
         file_menu.add_command(label="Wczytaj obraz", command=self.wczytaj_obraz)
         file_menu.add_command(label="Zapisz obraz", command=self.zapisz_obraz)
         file_menu.add_command(label="Duplikuj obraz", command=self.duplikuj_obraz)
-        self.menu_bar.add_cascade(label="File", menu=file_menu)
+        self.menu_bar.add_cascade(label="Plik", menu=file_menu)
 
         # Zakładka Lab 1
         lab1_menu = tk.Menu(self.menu_bar, tearoff=0)
@@ -99,17 +99,178 @@ class AplikacjaObrazy:
         lab5_menu.add_command(label="Szkieletyzacja", command=self.szkieletyzacja)
         self.menu_bar.add_cascade(label="Lab 5", menu=lab5_menu)
 
+        # Dodanie nowego menu Lab 6
+        lab6_menu = tk.Menu(self.menu_bar, tearoff=0)
+        lab6_menu.add_command(label="Wyznacz cechy obiektu binarnego", command=self.wyznacz_cechy_obiektu)
+        lab6_menu.add_command(label="Transformata Hougha - Linie", command=self.detekcja_krawedzi_hough)
+        self.menu_bar.add_cascade(label="Lab 6", menu=lab6_menu)
+
         # Zakładka View
         view_menu = tk.Menu(self.menu_bar, tearoff=0)
         view_menu.add_command(label="Full screen", command=self.pelny_ekran)
-        view_menu.add_command(label="Original size", command=self.naturalna_rozdzielczosc)
+        view_menu.add_command(label="Oryginalny rozmiar", command=self.naturalna_rozdzielczosc)
         view_menu.add_command(label="Dopasuj do okna", command=self.dopasuj_do_okna)
-        self.menu_bar.add_cascade(label="View", menu=view_menu)
+        self.menu_bar.add_cascade(label="Widok", menu=view_menu)
 
         # Zakładka Help
         help_menu = tk.Menu(self.menu_bar, tearoff=0)
-        help_menu.add_command(label="About", command=self.pokaz_informacje)
-        self.menu_bar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="Autor", command=self.pokaz_informacje)
+        self.menu_bar.add_cascade(label="Pomoc", menu=help_menu)
+
+    def detekcja_krawedzi_hough(self):
+        """Wykrywanie linii w obrazie za pomocą Transformaty Hougha."""
+        if not self.obrazy or self.notebook.index("current") == -1:
+            messagebox.showwarning("Brak obrazu", "Najpierw wczytaj obraz.")
+            return
+
+        aktualna_zakladka = self.notebook.index("current")
+        obraz_cv = self.obraz_na_cv2(aktualna_zakladka)
+
+        # Konwersja na obraz w skali szarości
+        if len(obraz_cv.shape) == 3:
+            obraz_cv = cv2.cvtColor(obraz_cv, cv2.COLOR_BGR2GRAY)
+
+        # Wykrycie krawędzi za pomocą detektora Canny'ego
+        prog1 = simpledialog.askinteger("Parametry Canny'ego", "Podaj wartość pierwszego progu (0-255):", minvalue=0,
+                                        maxvalue=255)
+        prog2 = simpledialog.askinteger("Parametry Canny'ego", "Podaj wartość drugiego progu (0-255):", minvalue=0,
+                                        maxvalue=255)
+
+        if prog1 is None or prog2 is None:
+            return
+
+        edges = cv2.Canny(obraz_cv, prog1, prog2)
+
+        # Parametry Transformaty Hougha
+        rho = simpledialog.askfloat("Parametry Hough", "Podaj wartość rho (rozdzielczość odległości, np. 1):",
+                                    minvalue=0.1)
+        theta = simpledialog.askfloat("Parametry Hough",
+                                      "Podaj wartość theta (rozdzielczość kąta w radianach, np. 0.0174533):",
+                                      minvalue=0.001)
+        threshold = simpledialog.askinteger("Parametry Hough", "Podaj wartość progu (liczba punktów na linii):",
+                                            minvalue=1)
+
+        if rho is None or theta is None or threshold is None:
+            return
+
+        # Detekcja linii za pomocą Transformaty Hougha
+        linie = cv2.HoughLines(edges, rho, theta, threshold)
+
+        if linie is None:
+            messagebox.showinfo("Wynik", "Nie znaleziono linii w obrazie.")
+            return
+
+        # Rysowanie linii na oryginalnym obrazie
+        obraz_kolor = cv2.cvtColor(obraz_cv, cv2.COLOR_GRAY2BGR)
+        for linia in linie:
+            rho, theta = linia[0]
+            a = np.cos(theta)
+            b = np.sin(theta)
+            x0 = a * rho
+            y0 = b * rho
+            x1 = int(x0 + 1000 * (-b))
+            y1 = int(y0 + 1000 * (a))
+            x2 = int(x0 - 1000 * (-b))
+            y2 = int(y0 - 1000 * (a))
+            cv2.line(obraz_kolor, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+        wynik_obraz = self.wygeneruj_obraz_z_cv2(obraz_kolor)
+        self.dodaj_obraz_do_notebooka(wynik_obraz, "Transformata Hougha - linie")
+
+    def wyznacz_cechy_obiektu(self):
+        """Wyznaczanie cech obiektu binarnego: momenty Hu i inne cechy kształtu."""
+        if not self.obrazy or self.notebook.index("current") == -1:
+            messagebox.showwarning("Brak obrazu", "Najpierw wczytaj obraz.")
+            return
+
+        aktualna_zakladka = self.notebook.index("current")
+        obraz_cv = self.obraz_na_cv2(aktualna_zakladka)
+
+        # Konwersja na obraz binarny, jeśli obraz nie jest binarny
+        if len(obraz_cv.shape) == 3:
+            obraz_cv = cv2.cvtColor(obraz_cv, cv2.COLOR_BGR2GRAY)
+
+        _, obraz_binarny = cv2.threshold(obraz_cv, 127, 255, cv2.THRESH_BINARY)
+
+        # Znajdź kontury obiektów
+        kontury, _ = cv2.findContours(obraz_binarny, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        if not kontury:
+            messagebox.showwarning("Brak obiektów", "Nie znaleziono obiektów binarnych w obrazie.")
+            return
+
+        # # Filtruj kontury, aby pominąć te obejmujące całe tło
+        # wysokosc, szerokosc = obraz_binarny.shape[:2]
+        # kontury = [
+        #     kontur for kontur in kontury
+        #     if cv2.contourArea(kontur) < (wysokosc * szerokosc * 0.95)  # Pomiń kontury większe niż 95% obrazu
+        # ]
+
+        if not kontury:
+            messagebox.showwarning("Brak obiektów", "Nie znaleziono odpowiednich obiektów binarnych w obrazie.")
+            return
+
+        # Wybierz największy kontur (zakładamy, że jest to obiekt zainteresowania)
+        kontur = max(kontury, key=cv2.contourArea)
+
+        # Obliczanie cech
+        momenty_hu = cv2.HuMoments(cv2.moments(kontur)).flatten()
+        pole_powierzchni = cv2.contourArea(kontur)
+        obwod = cv2.arcLength(kontur, True)
+
+        x, y, w, h = cv2.boundingRect(kontur)
+        aspect_ratio = w / h  # Współczynnik proporcji
+
+        rect_area = w * h
+        extent = pole_powierzchni / rect_area  # Stosunek powierzchni obiektu do powierzchni prostokąta otaczającego
+
+        convex_hull = cv2.convexHull(kontur)
+        convex_area = cv2.contourArea(convex_hull)
+        solidity = pole_powierzchni / convex_area  # Współczynnik wypełnienia otoczki wypukłej
+
+        equivalent_diameter = np.sqrt(4 * pole_powierzchni / np.pi)  # Średnica równoważna koła
+
+        # Przygotowanie wyników w formacie tekstowym
+        wyniki_hu = "\n".join([f"Hu[{i}]: {moment_hu:.6f}" for i, moment_hu in enumerate(momenty_hu)])
+        wyniki = (
+            f"Momenty Hu:\n{wyniki_hu}\n\n"
+            f"Pole powierzchni: {pole_powierzchni:.2f} pikseli\n"
+            f"Obwód: {obwod:.2f} pikseli\n\n"
+            f"Współczynniki kształtu:\n"
+            f"Aspect Ratio: {aspect_ratio:.2f}\n"
+            f"Extent: {extent:.2f}\n"
+            f"Solidity: {solidity:.2f}\n"
+            f"Equivalent Diameter: {equivalent_diameter:.2f} pikseli"
+        )
+
+
+        # Wyświetlanie wyników w oknie dialogowym
+        zapisz = messagebox.askyesno("Cechy obiektu binarnego", f"{wyniki}\n\nCzy chcesz zapisać do pliku?")
+
+        # Jeśli użytkownik wybierze zapis, zapisz wyniki do pliku
+        if zapisz:
+            zapis_plik = filedialog.asksaveasfilename(
+                title="Zapisz wyniki",
+                defaultextension=".csv",
+                filetypes=[("CSV Files", "*.csv"), ("Text Files", "*.txt")],
+            )
+            if zapis_plik:
+                try:
+                    with open(zapis_plik, mode="w", encoding="utf-8") as plik:
+                        plik.write("Cecha, Wartosc\n")
+                        for i, moment_hu in enumerate(momenty_hu):
+                            plik.write(f"Hu[{i}], {moment_hu:.6f}\n")
+                        plik.write(f"Pole powierzchni (piksele), {pole_powierzchni:.2f}\n")
+                        plik.write(f"Obwód (piksele), {obwod:.2f}\n")
+                        plik.write(f"Aspect Ratio, {aspect_ratio:.2f}\n")
+                        plik.write(f"Extent, {extent:.2f}\n")
+                        plik.write(f"Solidity, {solidity:.2f}\n")
+                        plik.write(f"Equivalent Diameter (piksele), {equivalent_diameter:.2f}\n")
+
+                    messagebox.showinfo("Zapisano", f"Wyniki zostały zapisane do pliku:\n{zapis_plik}")
+
+                except Exception as e:
+                    messagebox.showerror("Błąd zapisu", f"Nie udało się zapisać pliku:\n{e}")
 
     def detekcja_krawedzi_canny(self):
         """Detekcja krawędzi operatorem Canny'ego"""
