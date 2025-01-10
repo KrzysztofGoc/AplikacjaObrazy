@@ -630,7 +630,10 @@ class AplikacjaObrazy:
         obraz_cv = self.obraz_na_cv2(aktualna_zakladka)
 
         maska_wybor = simpledialog.askstring("Maska wyostrzania",
-                                             "Wybierz maskę:\n1 - Laplasjan 1\n2 - Laplasjan 2\n3 - Laplasjan 3")
+                                             "Wybierz maskę:\n"
+                                             "1 - [0, 1, 0], [1, -4, 1], [0, 1, 0]\n"
+                                             "2 - [-1, -1, -1], [-1, 8, -1], [-1, -1, -1]\n"
+                                             "3 - [-1, 2, -1], [2, -4, 2], [-1, 2, -1]")
 
         if maska_wybor == '1':
             kernel = np.array([[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=np.float32)
