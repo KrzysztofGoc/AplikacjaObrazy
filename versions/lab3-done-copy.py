@@ -105,6 +105,11 @@ class AplikacjaObrazy:
         lab6_menu.add_command(label="Transformata Hougha - Linie", command=self.detekcja_krawedzi_hough)
         self.menu_bar.add_cascade(label="Lab 6", menu=lab6_menu)
 
+        # Dodanie nowej zakładki "Projekt" do menu
+        projekt_menu = tk.Menu(self.menu_bar, tearoff=0)
+        projekt_menu.add_command(label="Detekcja twarzy i oczu (Haar)", command=self.detekcja_twarzy_i_oczu)
+        self.menu_bar.add_cascade(label="Projekt", menu=projekt_menu)
+
         # Zakładka View
         view_menu = tk.Menu(self.menu_bar, tearoff=0)
         view_menu.add_command(label="Full screen", command=self.pelny_ekran)
@@ -116,6 +121,67 @@ class AplikacjaObrazy:
         help_menu = tk.Menu(self.menu_bar, tearoff=0)
         help_menu.add_command(label="Autor", command=self.pokaz_informacje)
         self.menu_bar.add_cascade(label="Pomoc", menu=help_menu)
+
+        # Wczytywanie predefiniowanych kaskadowych klasyfikatorów Haar
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+
+    def detekcja_twarzy_i_oczu(self):
+        """Detekcja twarzy i oczu za pomocą kaskadowego klasyfikatora Haar."""
+        if not self.obrazy or self.notebook.index("current") == -1:
+            messagebox.showwarning("Brak obrazu", "Najpierw wczytaj obraz.")
+            return
+
+        aktualna_zakladka = self.notebook.index("current")
+        obraz_cv = self.obraz_na_cv2(aktualna_zakladka)
+
+        # Konwersja obrazu do skali szarości
+        obraz_szary = cv2.cvtColor(obraz_cv, cv2.COLOR_BGR2GRAY)
+        obraz_szary = cv2.equalizeHist(obraz_szary)  # Poprawa kontrastu
+
+        # Wczytywanie predefiniowanych kaskadowych klasyfikatorów Haar
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+
+        # Wykrywanie twarzy z dopasowanymi parametrami
+        twarze = face_cascade.detectMultiScale(
+            obraz_szary,
+            scaleFactor=1.1,
+            minNeighbors=7,  # Zwiększona liczba sąsiadów dla dokładniejszej detekcji
+            minSize=(80, 80),  # Minimalny rozmiar twarzy
+            flags=cv2.CASCADE_SCALE_IMAGE
+        )
+
+        if len(twarze) == 0:
+            messagebox.showinfo("Wynik detekcji", "Nie wykryto twarzy na obrazie.")
+            return
+
+        for (x, y, w, h) in twarze:
+            cv2.rectangle(obraz_cv, (x, y), (x + w, y + h), (255, 0, 0), 2)  # Rysowanie prostokąta wokół twarzy
+
+            # Ograniczenie detekcji oczu do górnej części twarzy, aby uniknąć wykrywania nosa/ust
+            roi_gray = obraz_szary[y:y + int(h / 2), x:x + w]
+            roi_color = obraz_cv[y:y + int(h / 2), x:x + w]
+
+            # Wykrywanie oczu w obrębie wykrytej twarzy
+            oczy = eye_cascade.detectMultiScale(
+                roi_gray,
+                scaleFactor=1.05,  # Bardziej precyzyjne skalowanie
+                minNeighbors=10,  # Więcej sąsiednich pikseli do poprawy detekcji
+                minSize=(25, 25),
+                maxSize=(w // 2, h // 3)
+            )
+
+            if len(oczy) == 0:
+                print("Nie wykryto oczu, spróbuj zmienić parametry.")
+
+            for (ex, ey, ew, eh) in oczy:
+                cv2.rectangle(roi_color, (ex, ey), (ex + ew, ey + eh), (0, 255, 0),
+                              2)  # Rysowanie prostokąta wokół oczu
+
+        # Dodanie przetworzonego obrazu do zakładki
+        wynik_obraz = self.wygeneruj_obraz_z_cv2(obraz_cv)
+        self.dodaj_obraz_do_notebooka(wynik_obraz, "Detekcja twarzy i oczu")
 
     def detekcja_krawedzi_hough(self):
         """Wykrywanie linii w obrazie za pomocą Transformaty Hougha."""
